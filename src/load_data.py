@@ -21,7 +21,6 @@ def prep_data():
     df_long['ПІБ'] = df_long['Прізвище'] + ' ' + df_long["Ім'я"]
 
     df_final = df_courses.copy()
-    print("df_final.columns:", df_final.columns.tolist())
 
     def get_students(disc, grp):
         mask = (df_long['Дисципліна'] == disc) & (df_long['Група'] == grp)
@@ -37,4 +36,4 @@ def prep_data():
 
 if __name__ == '__main__':
     df_final = prep_data()
-    print(df_final.head(15))
+    print(df_final.head())
