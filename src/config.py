@@ -7,12 +7,14 @@ CLASSROOMS = ['1.08.1', '1.08.1', '1.15.1', '1.15.2',
 
 
 def time_for_lesson():
-    start0 = datetime.combine(datetime.today(), time(8, 30))
+    start0   = datetime.combine(datetime.today(), time(8, 30))
     pair_len = timedelta(minutes=80)
-    breaks = {1: 10, 2: 10, 3: 10, 4: 40, 5: 10, 6: 10, 7: 10}
+    # перерви після пар 1..7
+    breaks   = {1: 10, 2: 10, 3: 10, 4: 40, 5: 10, 6: 10, 7: 10}
     slot_time = {}
     cur = start0
     for p in range(1, 9):
         slot_time[p] = (cur.time(), (cur + pair_len).time())
-        cur = cur + pair_len + timedelta(minutes=breaks.get(p))
+        pause = breaks.get(p, 0)
+        cur = cur + pair_len + timedelta(minutes=pause)
     return slot_time
