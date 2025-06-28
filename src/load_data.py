@@ -32,8 +32,3 @@ def prep_data():
         lambda r: get_students(r['Дисципліна'], r[group_col_name]), axis=1
     )
     return df_final
-
-
-if __name__ == '__main__':
-    df_final = prep_data()
-    print(df_final.head())
