@@ -87,6 +87,9 @@ def prep_data():
     )
 
     df_final['ПТ'] = df_final['Група'].map(result)
+    df_final["Кількість учнів"] = df_final["Список учнів"].apply(
+        lambda x: len(x) if isinstance(x, list) else 0
+    )
     return df_final
 
 
