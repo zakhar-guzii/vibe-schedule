@@ -1,5 +1,6 @@
 import pandas as pd
 from collections import Counter
+from collections import defaultdict
 
 
 def prep_data():
@@ -9,6 +10,32 @@ def prep_data():
     df_number_of_lessons = pd.read_excel(file, sheet_name='Розклад')
 
     df_final = df_courses.copy()
+
+    CSV_PATH = '../data/Розклад для студентів (літній терм 2025).csv'
+    df = pd.read_csv(CSV_PATH, sep=';', header=None, dtype=str)
+    week_subject_counts = defaultdict(lambda: defaultdict(int))
+    current_week = None
+    max_week = 0
+
+    for _, row in df.iterrows():
+        cell0 = row.iloc[0]
+        if isinstance(cell0, str) and 'тижд.' in cell0:
+            current_week = int(cell0.split()[0])
+            max_week = max(max_week, current_week)
+        else:
+            if current_week is None:
+                continue
+            for subj in row.iloc[1:]:
+                if isinstance(subj, str) and subj.strip():
+                    subj_code = subj.strip()
+                    week_subject_counts[current_week][subj_code] += 1
+
+    result = {}
+    for week in range(1, max_week + 1):
+        for subj_code, cnt in week_subject_counts[week].items():
+            result.setdefault(subj_code, [0] * max_week)
+            result[subj_code][week - 1] = cnt
+
     cols_to_drop = (
             [f'{i} тижд.' for i in range(1, 12)]
             + pd.date_range('08:30', '19:30', freq='90min').strftime('%H:%M').tolist()
@@ -17,6 +44,7 @@ def prep_data():
     df_subj = df_number_of_lessons.drop(
         columns=[c for c in cols_to_drop if c in df_number_of_lessons.columns]
     )
+
     all_entries = df_subj.values.flatten()
     subjects = [s.strip() for s in all_entries if isinstance(s, str) and s.strip()]
     counts = dict(Counter(subjects))
@@ -58,6 +86,7 @@ def prep_data():
         how='left'
     )
 
+    df_final['ПТ'] = df_final['Група'].map(result)
     return df_final
 
 
