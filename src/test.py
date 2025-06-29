@@ -15,18 +15,19 @@ with open('../data/schedule.csv', encoding='utf-8') as f:
             weekly = []
         for week_idx, cnt in enumerate(weekly, start=1):
             for _ in range(int(cnt)):
-                students = []
+                # читаємо студентів для підрахунку num_students
                 try:
                     students = ast.literal_eval(row.get('Список учнів', '[]'))
                 except (ValueError, SyntaxError):
-                    pass
+                    students = []
                 events.append({
                     'id': len(events),
                     'week': week_idx,
                     'group': row['Група'],
                     'subject': row['Дисципліна'],
                     'teacher': row['Викладач'],
-                    'students': set(students)
+                    'students': set(students),
+                    'num_students': len(students)             # <<< додано!
                 })
 
 
@@ -61,8 +62,12 @@ def assign_rooms(ev_list, times):
     room_assign = {}
     for ev in ev_list:
         tid = ev['id']
+        # тепер num_students існує і може бути використаний, якщо треба перевіряти місткість
+        needed = ev['num_students']
         d, s = times[tid]
-        for room in CLASSROOMS:
+        for room, cap in CLASSROOMS.items():
+            # наприклад, можна враховувати місткість:
+            # if cap >= needed and (d, s) not in room_schedule[room]:
             if (d, s) not in room_schedule[room]:
                 room_assign[tid] = room
                 room_schedule[room].add((d, s))
