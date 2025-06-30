@@ -40,19 +40,57 @@ This is a classic **constraint-satisfaction** problem that can be modelled as **
 | **2000 – present** | **Hybrid Meta-heuristics**             | Chains of _Iterative Forward Search → Hill Climbing → Great Deluge → Simulated Annealing_ win international competitions (ITC 2002, 2007). |
 
 ---
+## Welsh–Powell Greedy Algorithm (Largest Degree First)
 
-## 4 Baseline Greedy Pipeline
+The **Welsh–Powell algorithm** is a greedy algorithm for graph coloring, which sequentially assigns colors to graph vertices aiming to minimize the total number of colors used. Formally, given a graph \( G = (V, E) \), the steps are as follows:
 
-1. **Build Conflict Graph**
-   - Each course ⇒ vertex
-   - Edge if courses share students / teacher / room
+### 1. Vertex Sorting
+Calculate the degree \( d(v) \) for each vertex \( v \in V \). Sort the vertices in descending order of degrees:
 
-2. **Greedy Colouring**
-   ```text
-   sort vertices by descending degree
-   for v in vertices:
-       assign the smallest colour not used by neighbours
-   
+$$
+d(v_1) \geq d(v_2) \geq \dots \geq d(v_n)
+$$
+
+Vertices with equal degrees may be ordered arbitrarily.
+
+### 2. Assigning the First Color
+Select the vertex with the highest degree \( v_1 \) and assign it color \(1\):
+
+$$
+c(v_1) = 1
+$$
+
+Then sequentially, for each vertex \( v_2, v_3, \dots, v_n \):
+
+- If vertex \( v_i \) is not yet colored and does not share an edge with any vertex already colored with color \(1\), assign:
+
+$$
+c(v_i) = 1
+$$
+
+### 3. Assigning Subsequent Colors
+If uncolored vertices remain, select the uncolored vertex \( v_j \) with the highest degree among the remaining ones and assign it the next available color (e.g., color \(2\)):
+
+$$
+c(v_j) = 2
+$$
+
+Continue assigning this new color to each remaining uncolored vertex \( v_k \) that has no edges with vertices already assigned this color.
+
+Repeat the procedure, introducing new colors \( 3, 4, \dots \) as needed until all vertices are colored.
+
+---
+
+### Formal Notes
+At each iteration, the algorithm selects maximal independent subsets of vertices, coloring each subset identically. This heuristic prioritizes highly connected vertices and guarantees an upper bound for the chromatic number \( \chi(G) \):
+
+$$
+\chi(G) \leq \Delta(G) + 1
+$$
+
+where \( \Delta(G) \) represents the maximum vertex degree in graph \( G \).
+
+
 
 ---
 
