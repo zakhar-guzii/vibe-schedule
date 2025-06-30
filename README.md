@@ -117,3 +117,6 @@ The project leverages Python, NetworkX for graph management, and pandas for data
 - Compiles final weekly schedules, exporting as CSV and Excel files for practical usage (`test.py`).
 
 ---
+## Use of AI
+Used in English text translation, optimization algorithms, and error correction.
+
