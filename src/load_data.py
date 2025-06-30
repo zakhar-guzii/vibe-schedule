@@ -11,6 +11,7 @@ def prep_data():
 
     df_final = df_courses.copy()
 
+    # Словник result = {} з дисциплінами та кількістю їхнії пар щотижня
     CSV_PATH = '../data/Розклад для студентів (літній терм 2025).csv'
     df = pd.read_csv(CSV_PATH, sep=';', header=None, dtype=str)
     week_subject_counts = defaultdict(lambda: defaultdict(int))
@@ -36,6 +37,7 @@ def prep_data():
             result.setdefault(subj_code, [0] * max_week)
             result[subj_code][week - 1] = cnt
 
+    # Підрахунок загальної кількості пар
     cols_to_drop = (
             [f'{i} тижд.' for i in range(1, 12)]
             + pd.date_range('08:30', '19:30', freq='90min').strftime('%H:%M').tolist()
@@ -54,7 +56,7 @@ def prep_data():
         .replace(0, pd.NA)
         .astype('Int64')
     )
-
+    # Перетвоюємо дисципліни студентів у довгий формат, збираємо список унікальних студенітв для кожної дисципліні
     df_groups_for_melt = df_groups.drop(columns=['Група'], errors='ignore')
 
     id_cols = ['Прізвище', "Ім'я", 'Пошта']
@@ -85,7 +87,7 @@ def prep_data():
         on='Група',
         how='left'
     )
-
+    #Фінальний список
     df_final['ПТ'] = df_final['Група'].map(result)
     df_final["Кількість учнів"] = df_final["Список учнів"].apply(
         lambda x: len(x) if isinstance(x, list) else 0
