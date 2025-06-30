@@ -6,7 +6,7 @@ import pandas as pd
 from collections import defaultdict
 from config import CLASSROOMS, DAYS
 
-# Аналогічно з базовим алгоритмом
+# Зчитування подій з CSV
 events = []
 with open('../data/schedule.csv', encoding='utf-8') as f:
     reader = csv.DictReader(f)
@@ -34,7 +34,7 @@ with open('../data/schedule.csv', encoding='utf-8') as f:
                 })
 
 
-# Аналогічно з базовим алгоритмом
+# Побудова графа конфліктів
 def build_conflict_graph(events_week):
     G = nx.Graph()
     for ev in events_week:
@@ -46,42 +46,66 @@ def build_conflict_graph(events_week):
     return G
 
 
-def schedule_week(events_week):
-    """
-    Пояснення для любого перевіряючого, аби Вам було легше зрозуміти:
-
-    Приймає список подій за один тиждень,
-    будує граф конфліктів між ними (спільні студенти або викладачі),
-    а потім за допомогою жадібного алгоритму граф-фарбування
-    призначає кожній події початковий слот (день, пара).
-
-    Далі вона рахує навантаження на кожного студента
-    (не більше 5 пар на день) і на кожну дисциплінно-групову пару
-    (не більше 2 занять на день), і для тих подій, що перевищують ці ліміти,
-    шукає вільні слоти без конфліктів із сусідніми у графі
-    та без перевантаження студентів чи дисципліни,
-    переносить їх у нові слоти.
-
-    Наприкінці вона проходить по всіх ребрах графа і,
-    якщо дві події опинилися в одному слоті,
-    переміщує ту з меншим ступенем у графі
-    на перший допустимий слот, знову оновлюючи лічильники навантажень.
-
-    Результатом є словник `assignment`,
-    який для кожного `id` події повертає оптимізовану пару
-    `(день, номер_пари)`.
-        """
-    G = build_conflict_graph(events_week)
-    events_map = {ev['id']: ev for ev in events_week}
-
-    color_map = greedy_color(G, strategy='largest_first')
-    assignment = {}
+# М’яка оптимізація: вікна та екстремальні слоти
+def optimize_soft(assignment, events_week):
+    teacher_slots = defaultdict(lambda: defaultdict(set))
+    group_slots = defaultdict(lambda: defaultdict(set))
     for ev in events_week:
-        c = color_map[ev['id']]
-        d = min(c // 8, len(DAYS) - 1)
-        s = (c % 8) + 1
-        assignment[ev['id']] = (d, s)
+        tid = ev['id'];
+        d, s = assignment[tid]
+        teacher_slots[ev['teacher']][d].add(s)
+        group_slots[ev['group']][d].add(s)
+    # Переміщення екстремальних слотів (1 та 8) у середину (2–7)
+    for ev in events_week:
+        tid = ev['id'];
+        d, s = assignment[tid]
+        if s in (1, 8):
+            for new_s in range(2, 8):
+                if new_s not in teacher_slots[ev['teacher']][d] and new_s not in group_slots[ev['group']][d]:
+                    conflict = False
+                    for other in events_week:
+                        if other['id'] != tid and assignment.get(other['id']) == (d, new_s):
+                            if other['teacher'] == ev['teacher'] or not ev['students'].isdisjoint(other['students']):
+                                conflict = True;
+                                break
+                    if conflict: continue
+                    teacher_slots[ev['teacher']][d].discard(s)
+                    teacher_slots[ev['teacher']][d].add(new_s)
+                    group_slots[ev['group']][d].discard(s)
+                    group_slots[ev['group']][d].add(new_s)
+                    assignment[tid] = (d, new_s)
+                    break
+    # Зменшення вікон між парами
+    for ev in events_week:
+        tid = ev['id'];
+        d, s = assignment[tid]
+        slots = sorted(teacher_slots[ev['teacher']][d] | group_slots[ev['group']][d])
+        if len(slots) > 1 and (max(slots) - min(slots) + 1) > len(slots):
+            for candidate in range(min(slots), max(slots) + 1):
+                if candidate not in teacher_slots[ev['teacher']][d] and candidate not in group_slots[ev['group']][d]:
+                    conflict = False
+                    for other in events_week:
+                        if other['id'] != tid and assignment.get(other['id']) == (d, candidate):
+                            if other['teacher'] == ev['teacher'] or not ev['students'].isdisjoint(other['students']):
+                                conflict = True;
+                                break
+                    if conflict: continue
+                    teacher_slots[ev['teacher']][d].discard(s)
+                    teacher_slots[ev['teacher']][d].add(candidate)
+                    group_slots[ev['group']][d].discard(s)
+                    group_slots[ev['group']][d].add(candidate)
+                    assignment[tid] = (d, candidate)
+                    break
+    return assignment
 
+
+def schedule_week(events_week):
+    G = build_conflict_graph(events_week)
+    color_map = greedy_color(G, strategy='largest_first')
+    assignment = {ev['id']: (min(color_map[ev['id']] // 8, len(DAYS) - 1),
+                             (color_map[ev['id']] % 8) + 1)
+                  for ev in events_week}
+    # Підрахунок щоденного навантаження
     student_load = defaultdict(lambda: defaultdict(int))
     subj_load = defaultdict(lambda: defaultdict(int))
     for ev in events_week:
@@ -89,142 +113,101 @@ def schedule_week(events_week):
         for st in ev['students']:
             student_load[st][d] += 1
         subj_load[(ev['subject'], ev['group'])][d] += 1
-
-    for ev in sorted(events_week, key=lambda e: G.degree[e['id']]):
-        ev_id = ev['id']
-        d, s = assignment[ev_id]
-        if not (any(student_load[st][d] > 5 for st in ev['students']) or
-                subj_load[(ev['subject'], ev['group'])][d] > 2):
-            continue
-        for dd in range(len(DAYS)):
-            for ss in range(1, 9):
-                if any(assignment.get(nb) == (dd, ss) for nb in G.neighbors(ev_id)):
-                    continue
-                if any(student_load[st][dd] >= 5 for st in ev['students']):
-                    continue
-                if subj_load[(ev['subject'], ev['group'])][dd] >= 2:
-                    continue
-                for st in ev['students']:
-                    student_load[st][d] -= 1
-                    student_load[st][dd] += 1
-                subj_load[(ev['subject'], ev['group'])][d] -= 1
-                subj_load[(ev['subject'], ev['group'])][dd] += 1
-                assignment[ev_id] = (dd, ss)
-                dd = len(DAYS)
-                break
-            else:
-                continue
-            break
-
-    for u, v in G.edges():
-        if assignment[u] == assignment[v]:
-            ev_move = u if G.degree[u] < G.degree[v] else v
-            old_d, old_s = assignment[ev_move]
-            ev = events_map[ev_move]
-            for dd in range(len(DAYS)):
-                for ss in range(1, 9):
-                    if (dd, ss) == (old_d, old_s):
-                        continue
-                    if any(assignment.get(nb) == (dd, ss) for nb in G.neighbors(ev_move)):
-                        continue
-                    if any(student_load[st][dd] >= 5 for st in ev['students']):
-                        continue
-                    key = (ev['subject'], ev['group'])
-                    if subj_load[key][dd] >= 2:
-                        continue
-                    for st in ev['students']:
-                        student_load[st][old_d] -= 1
-                        student_load[st][dd] += 1
-                    subj_load[key][old_d] -= 1
-                    subj_load[key][dd] += 1
-                    assignment[ev_move] = (dd, ss)
-                    dd = len(DAYS)
-                    break
-                else:
-                    continue
-                break
-
+    # Жорсткі щоденні обмеження: <=4 пар/день студент, <=2 пар/день дисципліни
+    for st, days in list(student_load.items()):
+        for d, cnt in list(days.items()):
+            if cnt > 4:
+                evs = [ev for ev in events_week if st in ev['students'] and assignment[ev['id']][0] == d]
+                for ev in sorted(evs, key=lambda e: G.degree[e['id']])[:cnt - 4]:
+                    old_d, old_s = assignment[ev['id']]
+                    for dd in range(len(DAYS)):
+                        for ss in range(1, 9):
+                            if (dd, ss) == (old_d, old_s):
+                                continue
+                            if any(assignment.get(n) == (dd, ss) for n in G.neighbors(ev['id'])):
+                                continue
+                            if student_load[st][dd] >= 4:
+                                continue
+                            key = (ev['subject'], ev['group'])
+                            if subj_load[key][dd] >= 2:
+                                continue
+                            for s2 in ev['students']:
+                                student_load[s2][old_d] -= 1
+                                student_load[s2][dd] += 1
+                            subj_load[key][old_d] -= 1
+                            subj_load[key][dd] += 1
+                            assignment[ev['id']] = (dd, ss)
+                            dd = len(DAYS)
+                            break
+                        else:
+                            continue
+                        break
+    for key, days in list(subj_load.items()):
+        for d, cnt in list(days.items()):
+            if cnt > 2:
+                evs = [ev for ev in events_week if (ev['subject'], ev['group']) == key and assignment[ev['id']][0] == d]
+                for ev in sorted(evs, key=lambda e: G.degree[e['id']])[:cnt - 2]:
+                    old_d, old_s = assignment[ev['id']]
+                    for dd in range(len(DAYS)):
+                        for ss in range(1, 9):
+                            if (dd, ss) == (old_d, old_s):
+                                continue
+                            if any(assignment.get(n) == (dd, ss) for n in G.neighbors(ev['id'])):
+                                continue
+                            if any(student_load[s2][dd] >= 4 for s2 in ev['students']):
+                                continue
+                            if subj_load[key][dd] >= 2:
+                                continue
+                            for s2 in ev['students']:
+                                student_load[s2][old_d] -= 1
+                                student_load[s2][dd] += 1
+                            subj_load[key][old_d] -= 1
+                            subj_load[key][dd] += 1
+                            assignment[ev['id']] = (dd, ss)
+                            dd = len(DAYS)
+                            break
+                        else:
+                            continue
+                        break
+    assignment = optimize_soft(assignment, events_week)
     return assignment
 
 
+# Призначення аудиторій
 def assign_rooms(events_week, times, room_caps=CLASSROOMS):
-    """
-    Призначає аудиторії для подій заданого тижня з урахуванням місткості
-    та зайнятості в кожному тайм-слоті.
-    """
     room_schedule = {r: set() for r in room_caps}
-    result = {}
-    base_map = {}
-    for r in room_caps:
-        b = r.split('.', 1)[0]
-        base_map.setdefault(b, []).append(r)
+    assignment_room = {}
     for ev in events_week:
-        tid = ev['id']
-        d, s = times.get(tid, (None, None))
+        tid = ev['id'];
+        d, s = times[tid];
         needed = ev['num_students']
         for room, cap in room_caps.items():
             if cap >= needed and (d, s) not in room_schedule[room]:
-                result[tid] = room
+                assignment_room[tid] = room
                 room_schedule[room].add((d, s))
                 break
-        else:
-            for rooms in base_map.values():
-                for i in range(len(rooms)):
-                    for j in range(i + 1, len(rooms)):
-                        r1, r2 = rooms[i], rooms[j]
-                        if (room_caps[r1] + room_caps[r2] >= needed and
-                                (d, s) not in room_schedule[r1] and
-                                (d, s) not in room_schedule[r2]):
-                            result[tid] = f"{r1}+{r2}"
-                            room_schedule[r1].add((d, s))
-                            room_schedule[r2].add((d, s))
-                            break
-                    if tid in result:
-                        break
-                if tid in result:
-                    break
-    return result
-
-# у нас після роботи слоти, яким алгоритм зручно для всіх не зміг впихнути, того для того, щоб цн виправити, ми впихуємо їх тут
-def auto_assign_tbd(events_week, times, rooms, room_caps=CLASSROOMS):
-    room_sched = {r: set() for r in room_caps}
     for ev in events_week:
         tid = ev['id']
-        r = rooms.get(tid)
-        if r and r != 'TBD':
-            for sub in r.split('+'):
-                room_sched[sub].add(times[tid])
-    teacher_slots = {}
-    for ev in events_week:
-        teacher_slots.setdefault(ev['teacher'], set()).add(times[ev['id']])
-    for ev in events_week:
-        tid = ev['id']
-        if rooms.get(tid) == 'TBD':
+        if tid not in assignment_room:
             d, s = times[tid]
-            if (d, s) in teacher_slots.get(ev['teacher'], set()):
-                continue
             for room in room_caps:
-                if (d, s) not in room_sched[room]:
-                    rooms[tid] = room
-                    room_sched[room].add((d, s))
+                if (d, s) not in room_schedule[room]:
+                    assignment_room[tid] = room
+                    room_schedule[room].add((d, s))
                     break
-    return rooms
+    return assignment_room
 
-# Все аналогічно стандартному алгоритмку
+
+# Генерація фінального розкладу
 final = []
-prev = {}
 for week_idx in range(1, 13):
     evs = [e for e in events if e['week'] == week_idx]
     if not evs:
         continue
-    times = schedule_week(evs, prev.get(week_idx - 1))
+    times = schedule_week(evs)
     rooms = assign_rooms(evs, times)
-    rooms = auto_assign_tbd(evs, times, rooms)
-
-    curr = {}
     for ev in evs:
-        tid = ev['id']
-        d, s = times[tid]
+        d, s = times[ev['id']]
         final.append({
             'Week': week_idx,
             'DayNum': d,
@@ -232,19 +215,17 @@ for week_idx in range(1, 13):
             'Slot': s,
             'Subject': ev['subject'],
             'Group': ev['group'],
-            'Room': rooms.get(tid, 'TBD'),
-            'Teacher': ev['teacher']
+            'Teacher': ev['teacher'],
+            'Room': rooms[ev['id']]
         })
-        curr.setdefault((ev['subject'], ev['group']), []).append((d, s))
-    prev[week_idx] = curr
 
-df = pd.DataFrame(final)
-df = df.sort_values(['Week', 'DayNum', 'Slot']).drop(columns=['DayNum'])
-df.to_csv('../data/timetable.csv', index=False, encoding='utf-8')
-
+output_df = pd.DataFrame(final)
+output_df = output_df.sort_values(['Week', 'DayNum', 'Slot'])
+output_df = output_df.drop(columns=['DayNum'])
+output_df.to_csv('../data/timetable.csv', index=False, encoding='utf-8')
 with pd.ExcelWriter('../data/timetable.xlsx', engine='xlsxwriter') as writer:
-    df.to_excel(writer, sheet_name='Schedule', index=False)
+    output_df.to_excel(writer, sheet_name='Schedule', index=False)
     ws = writer.sheets['Schedule']
-    rows, cols = df.shape
+    rows, cols = output_df.shape
     ws.autofilter(0, 0, rows, cols - 1)
     ws.freeze_panes(1, 0)
