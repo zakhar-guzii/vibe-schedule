@@ -1,6 +1,6 @@
 from datetime import datetime, time, timedelta
 
-
+# Створення time-слотів для розкладу
 def time_for_lesson():
     start0 = datetime.combine(datetime.today(), time(8, 30))
     pair_len = timedelta(minutes=80)
@@ -12,7 +12,7 @@ def time_for_lesson():
         cur = cur + pair_len + timedelta(minutes=breaks.get(p, 10))
     return slot_times
 
-
+# Доступні аудиторії з їх розміром
 CLASSROOMS = {
     '1.08.1': 25, '1.08.2': 25, '1.15.1': 40, '1.15.2': 30,
     '2.08.1': 25, '2.08.2': 25, '2.15.1': 40, '2.15.2': 40,
