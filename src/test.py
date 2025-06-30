@@ -4,18 +4,18 @@ import networkx as nx
 import pandas as pd
 from config import CLASSROOMS, DAYS
 
+# Початковий дата сет у список подій, з структурою, з якою networkx може працювати
+
 events = []
 with open('../data/schedule.csv', encoding='utf-8') as f:
     reader = csv.DictReader(f)
     for row in reader:
-        # пар на тиждень
         try:
             weekly = ast.literal_eval(row.get('ПТ', '[]'))
         except (ValueError, SyntaxError):
             weekly = []
         for week_idx, cnt in enumerate(weekly, start=1):
             for _ in range(int(cnt)):
-                # читаємо студентів для підрахунку num_students
                 try:
                     students = ast.literal_eval(row.get('Список учнів', '[]'))
                 except (ValueError, SyntaxError):
@@ -27,9 +27,12 @@ with open('../data/schedule.csv', encoding='utf-8') as f:
                     'subject': row['Дисципліна'],
                     'teacher': row['Викладач'],
                     'students': set(students),
-                    'num_students': len(students)             # <<< додано!
+                    'num_students': len(students)
                 })
 
+
+# Граф конфліктів, де вузли представляють окремі пари занять,
+# а ребра з’єднують ті пари, які не можна проводити одночасно (через спільного викладача чи студентів)
 
 def build_conflicts(ev_list):
     G = nx.Graph()
@@ -41,6 +44,9 @@ def build_conflicts(ev_list):
                 G.add_edge(a['id'], b['id'])
     return G
 
+
+# Призначення кожній події тайм-слота, жадібне розфарбування з стратегією largest_first,
+# переведення з кольорів на час
 
 def assign_timeslots(ev_list):
     G = build_conflicts(ev_list)
@@ -57,24 +63,24 @@ def assign_timeslots(ev_list):
     return assignment
 
 
+# Підбір аудиторії
+
+
 def assign_rooms(ev_list, times):
     room_schedule = {r: set() for r in CLASSROOMS}
     room_assign = {}
     for ev in ev_list:
         tid = ev['id']
-        # тепер num_students існує і може бути використаний, якщо треба перевіряти місткість
         needed = ev['num_students']
         d, s = times[tid]
         for room, cap in CLASSROOMS.items():
-            # наприклад, можна враховувати місткість:
-            # if cap >= needed and (d, s) not in room_schedule[room]:
-            if (d, s) not in room_schedule[room]:
+            if cap >= needed and (d, s) not in room_schedule[room]:
                 room_assign[tid] = room
                 room_schedule[room].add((d, s))
                 break
     return room_assign
 
-
+# Формуємо наш кінцевий розклад
 all_rows = []
 for week_idx in range(1, 13):
     week_events = [e for e in events if e['week'] == week_idx]
@@ -96,9 +102,12 @@ for week_idx in range(1, 13):
             'Room': rooms.get(ev['id'], 'TBD')
         })
 
+
+# Завантаження датасетів
 df = pd.DataFrame(all_rows)
 df = df.sort_values(['Week', 'Day', 'Slot'])
 df.to_csv('../data/timetable_simple.csv', index=False)
+
 with pd.ExcelWriter('../data/timetable_simple.xlsx', engine='xlsxwriter') as writer:
     df.to_excel(writer, sheet_name='Schedule', index=False)
     ws = writer.sheets['Schedule']
